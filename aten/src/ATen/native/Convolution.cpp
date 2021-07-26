@@ -964,6 +964,15 @@ at::Tensor _convolution(
           params.stride,
           params.padding);
   } else if (input.device().is_cpu() || input.is_cuda()) {
+    bool is_channels_last_supported = (input.ndimension() == 4) &&
+        !params.use_nnpack(input, weight) && input.device().is_cpu() &&
+        !params.is_dilated();
+    if (is_channels_last_supported) {
+      auto memory_format = input.suggest_memory_format();
+      input = input.contiguous(memory_format);
+    } else {
+      input = input.contiguous();
+    }
     if (params.groups == 1) {
       output = at::_convolution_nogroup(
           input.contiguous(), weight, bias, params.stride, params.padding, params.dilation, params.transposed, params.output_padding);
