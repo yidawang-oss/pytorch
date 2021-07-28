@@ -390,7 +390,7 @@ class TestBundledInputs(TestCase):
                 """,
             )
 
-        out = []
+        out : List[str] = []
         sm = torch.jit.script(MyModel())
         inputs = (
             bundle_optional_dict_of_randn(small_sample),
