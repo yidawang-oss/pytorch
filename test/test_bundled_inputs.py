@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import io
 import textwrap
-from typing import List
+from typing import List, Optional, Dict
 
 import torch
 import torch.utils.bundled_inputs
@@ -323,6 +323,97 @@ class TestBundledInputs(TestCase):
             inputs=[(torch.ones(2),)]
         )
         self.assertEqual(bundled_model2.get_all_bundled_inputs(), [(torch.ones(2),)])
+
+
+    def test_dict_args(self):
+        class MyModel(torch.nn.Module):
+            def forward(
+                self,
+                arg1: Optional[Dict[str, torch.Tensor]],
+                arg2: Optional[List[torch.Tensor]],
+                arg3: torch.Tensor,
+            ):
+                if arg1 is None:
+                    return arg3
+                elif arg2 is None:
+                    return arg1["a"] + arg1["b"]
+                else:
+                    return arg1["a"] + arg1["b"] + arg2[0]
+
+        small_sample = dict(
+            a=torch.zeros([1, 2]),
+            b=torch.zeros([3, 4]),
+            c=torch.zeros([5, 6]),
+        )
+
+        small_list = [torch.zeros([3, 4])]
+
+        def condensed(t):
+            ret = torch.empty_like(t).flatten()[0].clone().expand(t.shape)
+            assert ret.storage().size() == 1
+            ret.storage()[0] = 0
+            return ret
+
+        def bundle_optional_dict_of_randn(template):
+            return torch.utils.bundled_inputs.InflatableArg(
+                value=(
+                    None
+                    if template is None
+                    else {k: condensed(v) for (k, v) in template.items()}
+                ),
+                fmt="{}",
+                fmt_fn="""
+                def {}(self, value: Optional[Dict[str, Tensor]]):
+                    if value is not None:
+                        output = {{}}
+                        for k, v in value.items():
+                            output[k] = torch.randn_like(v)
+                        return output
+                    else:
+                        return None
+                """,
+            )
+
+        def bundle_optional_list_of_randn(template):
+            return torch.utils.bundled_inputs.InflatableArg(
+                value=(None if template is None else [condensed(v) for v in template]),
+                fmt="{}",
+                fmt_fn="""
+                def {}(self, value: Optional[List[Tensor]]):
+                    if value is not None:
+                        output = []
+                        for v in value:
+                            output.append(torch.randn_like(v))
+                        return output
+                    else:
+                        return None
+                """,
+            )
+
+        out = []
+        sm = torch.jit.script(MyModel())
+        inputs = (
+            bundle_optional_dict_of_randn(small_sample),
+            bundle_optional_list_of_randn(small_list),
+            torch.zeros([3, 4]),
+        )
+        torch.utils.bundled_inputs.augment_model_with_bundled_inputs(
+            sm,
+            [
+                inputs,
+                (
+                    bundle_optional_dict_of_randn(small_sample),
+                    bundle_optional_list_of_randn(small_list),
+                    torch.zeros([3, 4]),
+                )
+            ],
+            _receive_inflate_expr=out,
+        )
+
+        loaded = save_and_load(sm)
+        inflated = loaded.get_all_bundled_inputs()
+        self.assertEqual(len(inflated[0]), len(inputs))
+
 
 if __name__ == '__main__':
     run_tests()
