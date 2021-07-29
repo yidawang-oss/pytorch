@@ -9,6 +9,7 @@ from torch.jit._recursive import wrap_cpp_module
 T = TypeVar("T")
 
 MAX_RAW_TENSOR_SIZE = 16
+_INFLATE_HELPER_NAMES = "_inflate_helper_names"
 
 class InflatableArg(NamedTuple):
     """ Helper type for bundled inputs.
@@ -248,7 +249,7 @@ def augment_many_model_functions_with_bundled_inputs(
     get_bundled_inputs_functions_and_info_template = ""
     inflate_helper_names: List[str] = []
 
-    model._c._register_attribute("inflate_helper_names", ListType(StringType.get()), [])
+    model._c._register_attribute(_INFLATE_HELPER_NAMES, ListType(StringType.get()), [])
 
     for function, input_list in inputs.items():
         function_name = function.__name__
@@ -350,7 +351,7 @@ def augment_many_model_functions_with_bundled_inputs(
                     return len(self.get_all_bundled_inputs_for_forward())
                 """))
 
-    model.inflate_helper_names = inflate_helper_names
+    model._inflate_helper_names = inflate_helper_names
     # Define some high level helper methods that act on all bundled inputs
     model.define(textwrap.dedent("""
         def get_bundled_inputs_functions_and_info(self):
@@ -419,10 +420,10 @@ def _get_bundled_inputs_attributes_and_methods(script_module: torch.jit.ScriptMo
             attributes.append("_bundled_inputs_deflated_" + function_name)
 
     # Has inflate function helpers
-    if hasattr(script_module, 'inflate_helper_names'):
-        inflate_helper_names = getattr(script_module, 'inflate_helper_names', [])
+    if hasattr(script_module, _INFLATE_HELPER_NAMES):
+        inflate_helper_names = getattr(script_module, _INFLATE_HELPER_NAMES, [])
         methods.extend(inflate_helper_names)
-        attributes.append('inflate_helper_names')
+        attributes.append(_INFLATE_HELPER_NAMES)
 
     return (methods, attributes)
 

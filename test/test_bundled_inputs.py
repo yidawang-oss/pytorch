@@ -351,7 +351,7 @@ class TestBundledInputs(TestCase):
         def condensed(t):
             ret = torch.empty_like(t).flatten()[0].clone().expand(t.shape)
             assert ret.storage().size() == 1
-            ret.storage()[0] = 0
+            # ret.storage()[0] = 0
             return ret
 
         def bundle_optional_dict_of_randn(template):
@@ -392,6 +392,7 @@ class TestBundledInputs(TestCase):
 
         out : List[str] = []
         sm = torch.jit.script(MyModel())
+        original_size = model_size(sm)
         inputs = (
             bundle_optional_dict_of_randn(small_sample),
             bundle_optional_list_of_randn(small_list),
@@ -409,6 +410,9 @@ class TestBundledInputs(TestCase):
             ],
             _receive_inflate_expr=out,
         )
+        augmented_size = model_size(sm)
+        # assert the size has not increased more than 8KB
+        self.assertLess(augmented_size, original_size + (1 << 13))
 
         loaded = save_and_load(sm)
         inflated = loaded.get_all_bundled_inputs()
