@@ -341,12 +341,18 @@ class TestBundledInputs(TestCase):
                     return arg1["a"] + arg1["b"] + arg2[0]
 
         small_sample = dict(
-            a=torch.zeros([1, 2]),
-            b=torch.zeros([3, 4]),
-            c=torch.zeros([5, 6]),
+            a=torch.zeros([10, 20]),
+            b=torch.zeros([1, 1]),
+            c=torch.zeros([10, 20]),
         )
+        small_list = [torch.zeros([10, 20])]
 
-        small_list = [torch.zeros([3, 4])]
+        big_sample = dict(
+            a=torch.zeros([1 << 5, 1 << 8, 1 << 10]),
+            b=torch.zeros([1 << 5, 1 << 8, 1 << 10]),
+            c=torch.zeros([1 << 5, 1 << 8, 1 << 10]),
+        )
+        big_list = [torch.zeros([1 << 5, 1 << 8, 1 << 10])]
 
         def condensed(t):
             ret = torch.empty_like(t).flatten()[0].clone().expand(t.shape)
@@ -393,20 +399,22 @@ class TestBundledInputs(TestCase):
         out : List[str] = []
         sm = torch.jit.script(MyModel())
         original_size = model_size(sm)
-        inputs = (
+        small_inputs = (
             bundle_optional_dict_of_randn(small_sample),
             bundle_optional_list_of_randn(small_list),
             torch.zeros([3, 4]),
         )
+        big_inputs = (
+            bundle_optional_dict_of_randn(big_sample),
+            bundle_optional_list_of_randn(big_list),
+            torch.zeros([1 << 5, 1 << 8, 1 << 10]),
+        )
+
         torch.utils.bundled_inputs.augment_model_with_bundled_inputs(
             sm,
             [
-                inputs,
-                (
-                    bundle_optional_dict_of_randn(small_sample),
-                    bundle_optional_list_of_randn(small_list),
-                    torch.zeros([3, 4]),
-                )
+                big_inputs,
+                small_inputs,
             ],
             _receive_inflate_expr=out,
         )
@@ -416,7 +424,7 @@ class TestBundledInputs(TestCase):
 
         loaded = save_and_load(sm)
         inflated = loaded.get_all_bundled_inputs()
-        self.assertEqual(len(inflated[0]), len(inputs))
+        self.assertEqual(len(inflated[0]), len(small_inputs))
 
 
 if __name__ == '__main__':
